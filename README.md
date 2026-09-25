@@ -155,6 +155,16 @@ Both tracks are always recorded separately, and each is levelled to the same spe
 - **Crash recovery.** While recording, both tracks are written to a cache directory as they come in. A recording that was not stopped properly is still there on the next start.
 - **The bar widget.** The app serves its live state on a Unix socket in `$XDG_RUNTIME_DIR`. `omarchy-meeting-recorder watch` relays it as NDJSON, which is what the widget reads.
 
+### Only some apps as the computer audio
+
+By default the computer audio is everything your computer plays, music included. To record only your meeting app, list it in `~/.config/omarchy-meeting-recorder/config.toml`:
+
+```toml
+computer_apps = ["slack"]
+```
+
+A playing stream is recorded when its application name, binary or PipeWire node name contains one of the entries. Everything else keeps playing as usual but stays out of the recording, and the computer audio track holds silence while the listed apps are quiet. Restart the app after changing the list.
+
 ### The model
 
 The default is whisper's `large-v3-turbo`. To use another, set it in `~/.config/omarchy-meeting-recorder/config.toml`:

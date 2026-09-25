@@ -86,7 +86,7 @@ impl Hub {
     fn new(app: &adw::Application) -> Rc<Self> {
         let hub = Rc::new(Hub {
             mic: Source::spawn("@DEFAULT_SOURCE@"),
-            system: Source::spawn("@DEFAULT_MONITOR@"),
+            system: Source::spawn_computer(),
             statuses: ipc::Statuses::default(),
             windows: RefCell::default(),
         });
