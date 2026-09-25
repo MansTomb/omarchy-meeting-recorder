@@ -264,7 +264,7 @@ omarchy-meeting-recorder transcribe mic.ogg computer.ogg --language en > transcr
 omarchy-meeting-recorder transcribe-file interview.mp3 --speakers 2 > transcript.md
 ```
 
-Any format ffmpeg can read works. `--language` takes `auto` (the default), `en`, `nl`, `de`, `fr`, `es`, `it` or `pt`.
+Any format ffmpeg can read works. `--language` takes `auto` (the default), `en`, `nl`, `de`, `fr`, `es`, `it`, `pt`, `ru` or `uk`.
 
 ## The screenshots
 
