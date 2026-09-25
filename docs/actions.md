@@ -2,7 +2,7 @@
 
 Actions are your own scripts, one click away on the done page of every meeting. File the transcript in your notes, publish it, mail it to the people who were there, open a ticket: anything you can write as a command.
 
-![The done page of a meeting with the Actions menu open, showing Store transcript in Obsidian and Publish as public transcript](../screenshots/actions.webp)
+<p align="center"><img src="../screenshots/actions-menu.webp" alt="Clicking Actions on the done page: the view zooms in on the menu with Store transcript in Obsidian and Publish as public transcript" width="700"></p>
 
 Until you add one, the done page shows **Add actions…**, which brings you here.
 
