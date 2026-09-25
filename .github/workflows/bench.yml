@@ -39,8 +39,8 @@ jobs:
             /cache/cargo/registry
             /cache/cargo/git
             target
-          key: cargo-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
-          restore-keys: cargo-${{ hashFiles('Cargo.lock') }}-
+          key: cargo-${{ hashFiles('Cargo.lock', '.cargo/config.toml') }}-${{ github.sha }}
+          restore-keys: cargo-${{ hashFiles('Cargo.lock', '.cargo/config.toml') }}-
 
       - name: Restore the models and the AMI meeting
         id: models
@@ -74,7 +74,7 @@ jobs:
             /cache/cargo/registry
             /cache/cargo/git
             target
-          key: cargo-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          key: cargo-${{ hashFiles('Cargo.lock', '.cargo/config.toml') }}-${{ github.sha }}
 
       - name: Save the models and the AMI meeting
         if: ${{ always() && steps.models.outputs.cache-hit != 'true' }}
