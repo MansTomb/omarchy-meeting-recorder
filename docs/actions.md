@@ -37,7 +37,7 @@ The command runs through `sh -c` in the meeting folder, so `~`, pipes and `VAR=v
 | `MEETING_DURATION` | Its length in seconds |
 | `MEETING_LANGUAGE` | The transcript language, a code like `en` |
 | `MEETING_SPEAKERS` | The speakers' names, one per line |
-| `MEETING_AUDIO` | The audio file, when there is one |
+| `MEETING_AUDIO` | `audio.ogg` for Mono, Stereo and imported meetings. With Separate files it is `mic.ogg`, your side only: mix it with `computer.ogg` next to it for the whole meeting |
 
 `transcript.md` has a heading with the date and duration, a `## Chapters` list when there are chapters, and then `## Transcript` with one paragraph per turn: `**[01:23] Maya:** What she said.`
 
@@ -200,7 +200,7 @@ echo "Published as a secret gist $url"
 Point your coding agent at this page and ask it for an action, for instance: *"Write a Meeting Recorder action that mails the summary and the action items to everyone in the meeting."* Everything it needs:
 
 - An action is an entry in `~/.config/omarchy-meeting-recorder/config.toml`: a `[[action]]` table with `name` (the menu label) and `command` (run with `sh -c`). Add to the file, never replace what is there.
-- The command runs in the meeting folder, gets it as `$1`, and gets the `MEETING_*` variables in the table above. Read the transcript from `$MEETING_TRANSCRIPT`; the speakers and chapters are in the JSON at `$MEETING_MANIFEST`. stdin is empty.
+- The command runs in the meeting folder, gets it as `$1`, and gets the `MEETING_*` variables in the table above. Read the transcript from `$MEETING_TRANSCRIPT`; the speakers and chapters are in the JSON at `$MEETING_MANIFEST`. stdin is empty. For the audio of the whole meeting, use `audio.ogg` when the folder has one, else mix `mic.ogg` and `computer.ogg` (`ffmpeg -i mic.ogg -i computer.ogg -filter_complex amix=inputs=2:normalize=0 ...`); `$MEETING_AUDIO` alone is only your side with Separate files. Leave the raw tracks in `.tracks` alone, they are not levelled.
 - Print one short line when done: it is shown to the user. Put a link in that line and it goes behind an Open button, out of the text: `Saved obsidian://...`, `Published https://...`. Exit non-zero on failure and write the reason to stderr; its last line is shown.
 - An action may edit `$MEETING_TRANSCRIPT` and `$MEETING_MANIFEST`; the app shows the result right away. Keep the speaker names in both the same, and keep the `**[mm:ss] Name:** text` line format.
 - For text work, use the user's own agent: `omarchy-meeting-recorder ask "<prompt>" < "$MEETING_TRANSCRIPT"` prints the answer. It runs without tools. Keep what was said verbatim; let the agent only add summaries around it.
