@@ -116,6 +116,18 @@ impl Manifest {
 }
 
 impl Manifest {
+    /// The people in the meeting, in the order of `speakers`, each once:
+    /// two labels given the same name are one person.
+    pub fn people(&self) -> Vec<String> {
+        let mut people: Vec<String> = Vec::new();
+        for name in &self.speakers {
+            if !people.contains(name) {
+                people.push(name.clone());
+            }
+        }
+        people
+    }
+
     /// The labels the transcription gives the speakers, in the order of
     /// `speakers`: as kept in the meeting, or for an older meeting You and
     /// Remote (Remote 1, Remote 2, ... with several voices on the computer
@@ -302,6 +314,13 @@ mod tests {
         assert!(out.contains("**[00:01] Jankees:** Hi."));
         assert!(out.contains("**[00:03] Remote:** You: said hi."));
         assert!(out.ends_with('\n'));
+    }
+
+    #[test]
+    fn speakers_with_the_same_name_are_one_person() {
+        let mut manifest = super::from_folder(std::path::Path::new("/nowhere/202609291404 Call")).unwrap();
+        manifest.speakers = vec!["Jankees".into(), "Jankees".into(), "Denise".into()];
+        assert_eq!(manifest.people(), vec!["Jankees", "Denise"]);
     }
 
     #[test]
