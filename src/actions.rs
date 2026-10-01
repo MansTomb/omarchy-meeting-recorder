@@ -136,7 +136,7 @@ pub fn run(action: &Action, dir: &Path, manifest: &Manifest) -> Result<Outcome, 
         .env("MEETING_STARTED_AT", manifest.started_at.to_string())
         .env("MEETING_DURATION", manifest.duration_secs.to_string())
         .env("MEETING_LANGUAGE", &manifest.language)
-        .env("MEETING_SPEAKERS", manifest.speakers.join("\n"))
+        .env("MEETING_SPEAKERS", manifest.people().join("\n"))
         .env("MEETING_AUDIO", audio.unwrap_or_default())
         .stdin(Stdio::null())
         .output()

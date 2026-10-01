@@ -563,26 +563,33 @@ pub fn transcribe(
     // stretches count, so the other side leaking in is not taken for a person
     // in the room.
     let local = voices(&only(&mic, &mic_regions), events, abort)?;
+    // Echo that got past the level check can still come out as a voice of
+    // its own; its lines are dropped after the mic's pass.
+    let (local, echo) = split_echo(
+        local,
+        &active_frames(&computer, computer.len().div_ceil(FRAME)),
+    );
     let remote = voices(&computer, events, abort)?;
     let context = load_whisper(events, abort)?;
 
     let length = |regions: &[Region]| regions.iter().map(|r| r.end - r.start).sum::<usize>();
     let total = (length(&mic_regions) + length(&computer_regions)).max(1) as f64;
     let mut sides = [
-        (&mic, &mic_regions, Speakers::Side("You", local)),
+        (&mic, &mic_regions, Speakers::Side("You", local), echo),
         (
             &computer,
             &computer_regions,
             Speakers::Side("Remote", remote),
+            Vec::new(),
         ),
     ];
     // The side with the most sound first: with "auto" its language counts for both.
-    sides.sort_by_key(|(_, regions, _)| std::cmp::Reverse(length(regions)));
+    sides.sort_by_key(|(_, regions, _, _)| std::cmp::Reverse(length(regions)));
     let mut language = language.to_owned();
     let mut detected = None;
     let mut segments = Vec::new();
     let mut done = 0.0;
-    for (track, regions, speakers) in &sides {
+    for (track, regions, speakers, echo) in &sides {
         if regions.is_empty() {
             continue;
         }
@@ -604,7 +611,9 @@ pub fn transcribe(
             language = found.clone();
             detected = Some(found);
         }
-        segments.extend(lines);
+        segments.extend(lines.into_iter().filter(|l| {
+            echo.is_empty() || crate::diarize::speaker_at(echo, l.start_ms, l.end_ms) == 0
+        }));
         done += share;
     }
     emit(events, Event::Progress(1.0));
@@ -687,6 +696,63 @@ fn interleave(mut sentences: Vec<Segment>) -> Vec<Segment> {
         }
     }
     out
+}
+
+/// Splits the voices found on the mic into real ones and echo. Through
+/// speakers the other side reaches the mic, and when it is loud enough to pass
+/// `own_speech_regions` the diarization hears it as one more person in the
+/// room. Such a voice only speaks while the computer audio does: a voice with
+/// most of its speech (60% or more) over computer audio is echo, as long as
+/// another voice on the mic mostly speaks on its own (under 40%), so that a
+/// call over steady music never loses you. Returns the turns of the real
+/// voices, renumbered (empty when one is left), and all turns with speaker 0
+/// for a real voice and 1 for echo (empty when there is no echo).
+fn split_echo(
+    turns: Vec<crate::diarize::Turn>,
+    computer_active: &[bool],
+) -> (Vec<crate::diarize::Turn>, Vec<crate::diarize::Turn>) {
+    let mut spoken = std::collections::BTreeMap::<usize, (i64, i64)>::new();
+    for turn in &turns {
+        let first = ms_to_sample(turn.start_ms) / FRAME;
+        let last = ms_to_sample(turn.end_ms).div_ceil(FRAME);
+        let (all, over) = spoken.entry(turn.speaker).or_default();
+        for frame in first..last {
+            *all += 1;
+            *over += i64::from(computer_active.get(frame).copied().unwrap_or(false));
+        }
+    }
+    let share = |speaker: &usize| {
+        spoken
+            .get(speaker)
+            .map_or(0.0, |(all, over)| *over as f64 / (*all).max(1) as f64)
+    };
+    let is_echo = |t: &crate::diarize::Turn| share(&t.speaker) >= 0.6;
+    if !spoken.keys().any(|s| share(s) < 0.4) || !turns.iter().any(is_echo) {
+        return (turns, Vec::new());
+    }
+    let mask: Vec<crate::diarize::Turn> = turns
+        .iter()
+        .map(|t| crate::diarize::Turn {
+            speaker: usize::from(is_echo(t)),
+            ..t.clone()
+        })
+        .collect();
+    let real: Vec<crate::diarize::Turn> = turns.into_iter().filter(|t| !is_echo(t)).collect();
+    let mut order: Vec<usize> = Vec::new();
+    let real: Vec<crate::diarize::Turn> = real
+        .into_iter()
+        .map(|t| {
+            let speaker = order
+                .iter()
+                .position(|s| *s == t.speaker)
+                .unwrap_or_else(|| {
+                    order.push(t.speaker);
+                    order.len() - 1
+                });
+            crate::diarize::Turn { speaker, ..t }
+        })
+        .collect();
+    (if order.len() < 2 { Vec::new() } else { real }, mask)
 }
 
 /// `track` with everything outside `regions` silenced.
@@ -1404,6 +1470,59 @@ mod tests {
                 "So the beta went out on Monday."
             ]
         );
+    }
+
+    fn turn(start_ms: i64, end_ms: i64, speaker: usize) -> crate::diarize::Turn {
+        crate::diarize::Turn {
+            start_ms,
+            end_ms,
+            speaker,
+        }
+    }
+
+    /// Computer audio in the given ms ranges, as frames.
+    fn computer_audio(ranges: &[(i64, i64)]) -> Vec<bool> {
+        (0..1000)
+            .map(|f| {
+                let ms = sample_to_ms(f * FRAME);
+                ranges.iter().any(|(s, e)| (*s..*e).contains(&ms))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_voice_on_the_mic_that_only_speaks_with_the_other_side_is_echo() {
+        // You speak on your own; the second voice always with the other side.
+        let turns = vec![
+            turn(0, 2000, 0),
+            turn(2000, 4000, 1),
+            turn(4000, 6000, 0),
+            turn(6000, 8000, 1),
+        ];
+        let active = computer_audio(&[(2000, 4000), (6000, 8000)]);
+        let (real, mask) = split_echo(turns, &active);
+        // One voice left: the side is just "You".
+        assert!(real.is_empty());
+        let echo: Vec<usize> = mask.iter().map(|t| t.speaker).collect();
+        assert_eq!(echo, vec![0, 1, 0, 1]);
+    }
+
+    #[test]
+    fn two_people_sharing_the_mic_stay_two() {
+        let turns = vec![turn(0, 2000, 0), turn(2000, 4000, 1), turn(4000, 6000, 0)];
+        let active = computer_audio(&[(6000, 9000)]);
+        let (real, mask) = split_echo(turns.clone(), &active);
+        assert_eq!(real, turns);
+        assert!(mask.is_empty());
+    }
+
+    #[test]
+    fn steady_music_under_the_call_drops_no_one() {
+        let turns = vec![turn(0, 2000, 0), turn(2000, 4000, 1)];
+        let active = computer_audio(&[(0, 9000)]);
+        let (real, mask) = split_echo(turns.clone(), &active);
+        assert_eq!(real, turns);
+        assert!(mask.is_empty());
     }
 
     #[test]
