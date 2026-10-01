@@ -22,6 +22,8 @@ command = "~/bin/publish-transcript"
 
 The menu reads this file every time it opens, so a new action shows up without restarting the app.
 
+Add `auto = true` to an action to have it run by itself on every fresh transcript, once the chapters are made, without picking it from the menu. Several automatic actions run one after the other, in the order of the file.
+
 ## What your command gets
 
 The command runs through `sh -c` in the meeting folder, so `~`, pipes and `VAR=value` in front all work. The folder is `$1`, and the meeting is described in these variables:

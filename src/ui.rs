@@ -338,6 +338,8 @@ struct Recorder {
     /// Looked up once: the default agent, if any.
     agent: std::cell::OnceCell<Option<Agent>>,
     generating: Cell<bool>,
+    /// The automatic actions wait for the chapters being made.
+    actions_after_chapters: Cell<bool>,
     current_line: Cell<i32>,
 
     mic: Source,
@@ -795,6 +797,7 @@ impl Recorder {
             chapters_spinner,
             agent: std::cell::OnceCell::new(),
             generating: Cell::new(false),
+            actions_after_chapters: Cell::new(false),
             current_line: Cell::new(-1),
             mic,
             system,
@@ -1115,7 +1118,7 @@ impl Recorder {
                 .connect_activate(move |_, parameter| {
                     let index = parameter.and_then(|p| p.get::<i32>());
                     if let (Some(r), Some(index)) = (weak.upgrade(), index) {
-                        r.run_action(index as usize);
+                        r.run_actions(vec![index as usize]);
                     }
                 });
         }
@@ -1207,11 +1210,26 @@ impl Recorder {
         self.add_actions_button.set_visible(actions.is_empty());
     }
 
-    /// Runs one of your actions on this meeting, off the main thread, and says
-    /// how it went; a link it printed gets an Open button.
-    fn run_action(self: &Rc<Self>, index: usize) {
-        let Some(action) = crate::actions::load().into_iter().nth(index) else {
+    /// Runs the actions marked `auto`, one after the other.
+    fn run_automatic_actions(self: &Rc<Self>) {
+        let automatic = crate::actions::load()
+            .iter()
+            .enumerate()
+            .filter(|(_, action)| action.auto)
+            .map(|(index, _)| index)
+            .collect();
+        self.run_actions(automatic);
+    }
+
+    /// Runs your actions on this meeting in turn, off the main thread, and says
+    /// how each went; a link it printed gets an Open button.
+    fn run_actions(self: &Rc<Self>, mut queue: Vec<usize>) {
+        if queue.is_empty() {
             return;
+        }
+        let index = queue.remove(0);
+        let Some(action) = crate::actions::load().into_iter().nth(index) else {
+            return self.run_actions(queue);
         };
         let (Some(dir), Some(manifest)) = (
             self.result_dir.borrow().clone(),
@@ -1264,6 +1282,7 @@ impl Recorder {
                 }
             };
             this.toasts.add_toast(toast);
+            this.run_actions(queue);
         });
     }
 
@@ -2170,9 +2189,15 @@ impl Recorder {
         } else {
             self.window.set_default_widget(Some(&self.copy_button));
             self.copy_button.grab_focus();
-            // A fresh transcript gets chapters when an agent is around.
+            // A fresh transcript gets chapters when an agent is around, and
+            // then the automatic actions.
             if self.can_have_chapters() {
                 self.generate_chapters();
+            }
+            if self.generating.get() {
+                self.actions_after_chapters.set(true);
+            } else {
+                self.run_automatic_actions();
             }
         }
         if self.quit_when_done.get()
@@ -2464,6 +2489,7 @@ impl Recorder {
             .await
             .unwrap_or_else(|_| Err("the agent stopped unexpectedly".into()));
             this.generating.set(false);
+            let run_actions = this.actions_after_chapters.replace(false);
             // The folder may have been renamed meanwhile (same timestamp
             // prefix); a different meeting is left alone.
             let prefix = |p: &std::path::Path| {
@@ -2483,6 +2509,9 @@ impl Recorder {
                     this.chapters_group
                         .set_description(Some(&format!("{} could not make chapters", agent.name)));
                 }
+            }
+            if run_actions {
+                this.run_automatic_actions();
             }
         });
     }

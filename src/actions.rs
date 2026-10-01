@@ -8,6 +8,9 @@
 //! command = "~/.local/bin/meeting-to-obsidian"
 //! ```
 //!
+//! With `auto = true` an action also runs by itself on every fresh
+//! transcript, after the chapters.
+//!
 //! The command runs through `sh -c` in the meeting folder, with that folder as
 //! `$1` and the meeting described in `MEETING_*` variables. What it prints last
 //! is shown when it is done; a link there (web or `obsidian://`) goes behind an
@@ -28,6 +31,8 @@ pub const DOCS: &str =
 pub struct Action {
     pub name: String,
     pub command: String,
+    /// Runs by itself once a fresh transcript and its chapters are done.
+    pub auto: bool,
 }
 
 /// The actions in the config file, in its order. Read every time, so an edit
@@ -42,13 +47,13 @@ pub fn load() -> Vec<Action> {
 /// TOML parser: `key = "value"` pairs, `#` comments, nothing nested.
 fn parse(text: &str) -> Vec<Action> {
     let mut actions = Vec::new();
-    let mut current: Option<(String, String)> = None;
-    let mut finish = |current: &mut Option<(String, String)>| {
-        if let Some((name, command)) = current.take()
-            && !name.is_empty()
-            && !command.is_empty()
+    let mut current: Option<Action> = None;
+    let mut finish = |current: &mut Option<Action>| {
+        if let Some(action) = current.take()
+            && !action.name.is_empty()
+            && !action.command.is_empty()
         {
-            actions.push(Action { name, command });
+            actions.push(action);
         }
     };
     for line in text.lines() {
@@ -56,11 +61,15 @@ fn parse(text: &str) -> Vec<Action> {
         if line.starts_with('[') {
             finish(&mut current);
             if line == "[[action]]" {
-                current = Some((String::new(), String::new()));
+                current = Some(Action {
+                    name: String::new(),
+                    command: String::new(),
+                    auto: false,
+                });
             }
             continue;
         }
-        let Some((name, command)) = current.as_mut() else {
+        let Some(action) = current.as_mut() else {
             continue;
         };
         let Some((key, value)) = line.split_once('=') else {
@@ -68,8 +77,9 @@ fn parse(text: &str) -> Vec<Action> {
         };
         let value = unquote(value.trim());
         match key.trim() {
-            "name" => *name = value,
-            "command" => *command = value,
+            "name" => action.name = value,
+            "command" => action.command = value,
+            "auto" => action.auto = value == "true",
             _ => {}
         }
     }
@@ -263,6 +273,7 @@ command = "~/.local/bin/meeting-to-obsidian"
 [[action]]
 name = 'Publish'   # a comment
 command = 'publish "$1" --secret'
+auto = true  # after every transcript
 
 [[action]]
 name = "No command, ignored"
@@ -276,10 +287,12 @@ name = "not an action"
                 Action {
                     name: "Copy to Obsidian".into(),
                     command: "~/.local/bin/meeting-to-obsidian".into(),
+                    auto: false,
                 },
                 Action {
                     name: "Publish".into(),
                     command: "publish \"$1\" --secret".into(),
+                    auto: true,
                 },
             ]
         );
@@ -306,6 +319,7 @@ name = "not an action"
         let action = |command: &str| Action {
             name: "Test".into(),
             command: command.into(),
+            auto: false,
         };
         let saved = run(
             &action("echo busy; echo Saved obsidian://open?file=Weekly"),
